@@ -222,7 +222,10 @@ async function loadDaily(){
     const d = await ask(promptDaily(lang, date));
     store.set(ck, JSON.stringify(d));
     renderDaily(d);
-  }catch(err){ $('daily').classList.add('hide'); }
+  }catch(err){
+    $('dailyOut').innerHTML = `<p class="error">${esc(err.message)}</p><button type="button" class="icon-btn" id="retryDaily" style="margin-top:10px;width:auto;padding:8px 14px">Tentar de novo</button>`;
+    $('retryDaily').onclick = loadDaily;
+  }
 }
 loadDaily();
 
