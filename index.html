@@ -275,10 +275,10 @@ async function ask(prompt){
 const promptSentence = (sentence, lang) => `Você é um professor experiente de ${lang} para um brasileiro.
 Frase do aluno: "${sentence}"
 O aluno pode ter escrito em português, em ${lang} (talvez com erros) ou misturando os idiomas. Entenda a intenção e mostre as formas de dizer isso em ${lang}.
-Monte uma linha do tempo de 4 a 6 alternativas em ${lang}, da MAIS USADA NO DIA A DIA (simples, mas menos precisa) até a MAIS CORRETA E NATURAL (a melhor), passando por variações de nível e formalidade.
+Monte uma linha do tempo com 10 a 12 alternativas em ${lang}, da MAIS USADA NO DIA A DIA (simples, mas menos precisa) até a MAIS CORRETA E NATURAL (a melhor). Cada alternativa deve ter estrutura ou vocabulário realmente diferente (informal, neutra, formal, com expressões idiomáticas, voz passiva, etc.), sem repetir.
 Responda SOMENTE em JSON:
 {"verdict":"1 frase curta em português: se já estava em ${lang}, diga se está correta e o principal ajuste; se estava em outro idioma, diga o que você entendeu",
- "alternatives":[{"text":"frase em ${lang}","level":"comum"|"correta"|"melhor","note":"no máximo 12 palavras em português dizendo quando usar ou por que é melhor"}]}
+ "alternatives":[{"text":"frase em ${lang}","level":"comum"|"correta"|"melhor","note":"no máximo 8 palavras em português: quando usar"}]}
 A última alternativa tem level "melhor". Seja breve, sem texto extra.`;
 
 const LV = { comum:['Mais usada','--c1'], correta:['Correta','--c2'], melhor:['Melhor jeito','--c3'] };
