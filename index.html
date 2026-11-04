@@ -105,19 +105,13 @@
   </section>
 
   <form class="card" id="form">
-    <div class="field"><label for="word">Palavra</label><input id="word" placeholder="ex.: although" autocomplete="off" required></div>
-    <div class="field"><label for="sentence">Frase (usando ou querendo usar a palavra)</label>
-      <textarea id="sentence" placeholder="ex.: I went out although was raining"></textarea></div>
+    <div class="field"><label for="sentence">Sua frase</label>
+      <textarea id="sentence" placeholder="Escreva em português ou no idioma que está estudando" required></textarea></div>
     <button class="go" id="go" type="submit">Analisar</button>
   </form>
 
-  <section class="card hide" id="cardMeaning">
-    <p class="sec-title">Significado</p>
-    <div id="meaning"></div>
-  </section>
-
   <section class="card hide" id="cardSentence">
-    <p class="sec-title">Como formular a frase</p>
+    <p class="sec-title">Jeitos de dizer</p>
     <div id="sentenceOut"></div>
   </section>
 </div>
@@ -212,8 +206,14 @@ async function ask(prompt){
   if(!key) throw new Error('Adicione sua chave na engrenagem.');
   await ensureModel(key);
   const base = 'https://generativelanguage.googleapis.com/v1beta/';
-  const body = JSON.stringify({ contents:[{parts:[{text:prompt}]}],
-    generationConfig:{ responseMimeType:'application/json', temperature:0.3 } });
+  const makeBody = (model, thinking=true) => {
+    const g = { responseMimeType:'application/json', temperature:0.3 };
+    if(thinking){
+      if(/^gemini-3/.test(model)) g.thinkingConfig = {thinkingLevel:'low'};
+      else if(/^gemini-2\.5-flash/.test(model)) g.thinkingConfig = {thinkingBudget:0};
+    }
+    return JSON.stringify({ contents:[{parts:[{text:prompt}]}], generationConfig:g });
+  };
   const tried = new Set();
   let last = {status:0,msg:''};
 
@@ -221,9 +221,10 @@ async function ask(prompt){
     tried.add(model);
     let r, j;
     try{
-      r = await fetch(`${base}models/${model}:generateContent?key=${encodeURIComponent(key)}`,
-        {method:'POST',headers:{'Content-Type':'application/json'},body});
-      j = await r.json();
+      const go = th => fetch(`${base}models/${model}:generateContent?key=${encodeURIComponent(key)}`,
+        {method:'POST',headers:{'Content-Type':'application/json'},body:makeBody(model,th)});
+      r = await go(true); j = await r.json();
+      if(!r.ok && r.status===400 && /think/i.test(j?.error?.message||'')){ r = await go(false); j = await r.json(); }
     }catch(e){ return {fatal:'Sem conexão. Verifique a internet.'}; }
     if(r.ok){
       const t = j?.candidates?.[0]?.content?.parts?.map(p=>p.text).join('') || '';
@@ -270,25 +271,15 @@ async function ask(prompt){
   throw new Error(friendly(last.status, last.msg) + (last.status ? ` (código ${last.status})` : ''));
 }
 
-// Prompts "por baixo dos panos": um por bloco da tela
-const promptMeaning = (word, lang) => `Você é um dicionário didático para um brasileiro que estuda ${lang}.
-Palavra: "${word}" (idioma: ${lang}).
-Responda SOMENTE em JSON: {"word":"palavra normalizada","class":"classe gramatical em português","meaning_pt":"significado em português, no máximo 2 frases curtas","examples":[{"text":"exemplo em ${lang}","pt":"tradução"},{"text":"exemplo em ${lang}","pt":"tradução"}]}
-Seja direto, sem informação extra. Se a palavra tiver vários sentidos, dê só os 1-2 mais comuns.`;
-
-const promptSentence = (word, sentence, lang) => `Você é professor de ${lang} para um brasileiro.
-Palavra-alvo: "${word}". Frase do aluno: "${sentence}".
-Se a frase estiver vazia, crie você mesmo a situação mais comum de uso da palavra.
-Tarefa: mostre como formular essa frase com a palavra, em ${lang}, numa linha do tempo de 3 a 4 alternativas, ordenadas da MAIS USADA NO DIA A DIA (mas menos precisa) até a MAIS CORRETA/NATURAL (a melhor).
+// Prompt "por baixo dos panos"
+const promptSentence = (sentence, lang) => `Você é um professor experiente de ${lang} para um brasileiro.
+Frase do aluno: "${sentence}"
+O aluno pode ter escrito em português, em ${lang} (talvez com erros) ou misturando os idiomas. Entenda a intenção e mostre as formas de dizer isso em ${lang}.
+Monte uma linha do tempo de 4 a 6 alternativas em ${lang}, da MAIS USADA NO DIA A DIA (simples, mas menos precisa) até a MAIS CORRETA E NATURAL (a melhor), passando por variações de nível e formalidade.
 Responda SOMENTE em JSON:
-{"verdict":"1 frase em português avaliando a frase original do aluno (ou null se vazia)",
- "alternatives":[{"text":"frase em ${lang}","level":"comum"|"correta"|"melhor","note":"1 frase curta em português dizendo por que"}]}
-A última alternativa deve ter level "melhor". Sem texto extra.`;
-
-function renderMeaning(d){
-  const ex = (d.examples||[]).slice(0,2).map(e=>`<div class="ex"><b>${esc(e.text)}</b><br>${esc(e.pt)}</div>`).join('');
-  $('meaning').innerHTML = `<p class="word">${esc(d.word)}<span class="tag">${esc(d.class)}</span></p><p class="meaning">${esc(d.meaning_pt)}</p>${ex}`;
-}
+{"verdict":"1 frase curta em português: se já estava em ${lang}, diga se está correta e o principal ajuste; se estava em outro idioma, diga o que você entendeu",
+ "alternatives":[{"text":"frase em ${lang}","level":"comum"|"correta"|"melhor","note":"no máximo 12 palavras em português dizendo quando usar ou por que é melhor"}]}
+A última alternativa tem level "melhor". Seja breve, sem texto extra.`;
 
 const LV = { comum:['Mais usada','--c1'], correta:['Correta','--c2'], melhor:['Melhor jeito','--c3'] };
 function renderSentence(d){
@@ -347,17 +338,13 @@ loadDaily();
 $('form').onsubmit = async e => {
   e.preventDefault();
   if(!store.get('pf_key')){ openCfg(); return; }
-  const word = $('word').value.trim(), sentence = $('sentence').value.trim(), lang = $('lang').value;
-  if(!word) return;
+  const sentence = $('sentence').value.trim(), lang = $('lang').value;
+  if(!sentence) return;
   $('go').disabled = true; $('go').textContent = 'Analisando...';
-  for(const id of ['cardMeaning','cardSentence']) $(id).classList.remove('hide');
-  $('meaning').innerHTML = skel(); $('sentenceOut').innerHTML = skel();
-
-  const fail = (el,err) => { $(el).innerHTML = `<p class="error">${esc(err.message)}</p>`; };
-  await Promise.all([
-    ask(promptMeaning(word,lang)).then(renderMeaning).catch(err=>fail('meaning',err)),
-    ask(promptSentence(word,sentence,lang)).then(renderSentence).catch(err=>fail('sentenceOut',err))
-  ]);
+  $('cardSentence').classList.remove('hide');
+  $('sentenceOut').innerHTML = skel();
+  try{ renderSentence(await ask(promptSentence(sentence, lang))); }
+  catch(err){ $('sentenceOut').innerHTML = `<p class="error">${esc(err.message)}</p>`; }
   $('go').disabled = false; $('go').textContent = 'Analisar';
 };
 </script>
